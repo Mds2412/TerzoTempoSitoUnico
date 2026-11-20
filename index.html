@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Terzo Tempo</title>
+<style>body{font:16px system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#f2f5f4;color:#12221d}a{display:block;margin:10px;padding:14px 22px;border-radius:14px;background:#0b6b4b;color:#fff;text-decoration:none;text-align:center}</style>
+<script>(function(){var s=location.search,h=location.hash,q=(s.match(/[?&]v=([dm])/)||[])[1],K='tt.view',v=q,ua=navigator.userAgent||'';
+var ph=/Android.+Mobile|iPhone|iPod|Windows Phone/i.test(ua)||(/Android/i.test(ua)&&Math.min(screen.width,screen.height)<700);
+var sa=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
+try{if(q)localStorage.setItem(K,q);else v=localStorage.getItem(K)}catch(e){}
+if(sa&&ph&&!q)v='m';if(v!=='d'&&v!=='m')v=ph?'m':'d';
+var rest=s.replace(/[?&]v=[dm]/,'').replace(/^&/,'?');if(rest&&rest.charAt(0)!=='?')rest='?'+rest;
+location.replace((v==='m'?'m/':'d/')+rest+h)})();</script></head>
+<body><noscript><div><a href="m/">📱 Versione mobile</a><a href="d/">🖥️ Versione desktop</a></div></noscript></body></html>
