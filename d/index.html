@@ -10,6 +10,93 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" href="icons/icon-192.png">
 <script>
+/*TTCH: riepilogo annuale, grafici a linee (saldi + fondo di emergenza)*/
+var TTCH=(function(){
+ var RNG={s:12,f:12},MN=['Gen.','Feb.','Mar.','Apr.','Mag.','Giu.','Lug.','Ago.','Set.','Ott.','Nov.','Dic.'],SRC=null,FS=null;
+ var COL={cont:'#2e9e5b',conto:'#2f7de1',inv:'#8b5cf6',fund:'#e0a800',ftg:'#8a97a1'};
+ var CSS='.chm{--chbg:var(--card);--chfg:var(--fg);--chmut:var(--mut);--chln:var(--line)}.chd{--chbg:var(--surface);--chfg:var(--ink);--chmut:var(--muted);--chln:var(--line)}'
+ +'.chg{display:grid;gap:12px;grid-template-columns:1fr}.chg.chg2{grid-template-columns:1fr 1fr}@media(max-width:760px){.chg.chg2{grid-template-columns:1fr}}'
+ +'.chc{min-width:0}.chc h4{margin:0 0 2px;font-size:15px}.chc .chs{font-size:12px;color:var(--chmut);margin:0 0 4px}.chc svg,.chfs svg{display:block;max-width:none}.chc svg{width:100%;height:auto}'
+ +'.chl{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;margin:2px 0 6px;color:var(--chfg)}.chl span{display:inline-flex;align-items:center;gap:5px}.chl i{display:inline-block;width:20px;height:0;border-top:4px solid;border-radius:2px}.chl i.d{border-top-style:dashed;border-top-width:3px}'
+ +'.ch-g{stroke:var(--chln);stroke-width:1}.ch-ax{stroke:var(--chmut);stroke-width:1.5}.ch-t{fill:var(--chmut);font:10px system-ui,sans-serif}.ch-m{fill:var(--chbg)}'
+ +'.chr{display:flex;gap:6px;margin:4px 0 6px}.chr button{font:inherit;font-size:12.5px;font-weight:700;padding:6px 10px;border-radius:999px;border:1px solid var(--chln);background:transparent;color:var(--chfg);cursor:pointer}.chr button.on{background:var(--chfg);color:var(--chbg)}.chb{margin-top:6px;font:inherit;font-size:13px;font-weight:700;padding:8px 12px;border-radius:10px;border:1px solid var(--chln);background:transparent;color:var(--chfg);cursor:pointer}'
+ +'.chn{font-size:13px;line-height:1.45;margin:6px 0 0;color:var(--chfg)}.chn b{font-weight:800}.cht{width:100%;border-collapse:collapse;font-size:12.5px}.cht th,.cht td{padding:5px 6px;text-align:right;border-top:1px solid var(--chln)}.cht th:first-child,.cht td:first-child{text-align:left}.cht th{color:var(--chmut);font-weight:700}'
+ +'.chfs{position:fixed;inset:0;z-index:400;background:var(--chbg);color:var(--chfg);display:flex;flex-direction:column;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}.chfs[hidden]{display:none}.chfh{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--chln);flex:none}.chfh b{font-size:15px}.chfh .r{display:flex;gap:6px}.chfb{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;padding:8px 6px}.chfb .chl{padding:0 8px}.chfh button{font:inherit;font-size:13px;font-weight:700;padding:7px 11px;border-radius:10px;border:1px solid var(--chln);background:transparent;color:var(--chfg);cursor:pointer}.chfh button.on{background:var(--chfg);color:var(--chbg)}';
+ function inject(){if(document.getElementById('ttch-css'))return;var s=document.createElement('style');s.id='ttch-css';s.textContent=CSS;(document.head||document.documentElement).appendChild(s)}
+ function pdt(t){var m=String(t||'').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);return m?new Date(+m[3],+m[2]-1,+m[1]):null}
+ function lab(d){return d.getDate()+' '+MN[d.getMonth()]+' '+d.getFullYear()}
+ function nv(v){if(typeof v==='number')return isFinite(v)?v:0;var x=parseFloat(String(v==null?'':v).replace(/\./g,'').replace(',','.'));return isFinite(x)?x:0}
+ function eu(n){return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.')+' €'}
+ function fm(n){return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.')}
+ function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+ /* check-in -> punti, in ordine di data */
+ function pts(hist){var o=[];(hist||[]).forEach(function(e){var d=pdt(e.sald)||pdt(e.d);if(!d||!e.bal)return;o.push({d:d,cont:nv(e.bal.cont),conto:nv(e.bal.conto),inv:nv(e.bal.inv),fund:e.fund==null?undefined:nv(e.fund),ftg:e.ftg==null?undefined:nv(e.ftg)})});o.sort(function(a,b){return a.d-b.d});return o}
+ function trail(p,now,m){var c=new Date(now.getFullYear(),now.getMonth()-(m||12),now.getDate());return p.filter(function(x){return x.d>=c})}
+ function nice(m){if(!(m>0))return 100;var e=Math.pow(10,Math.floor(Math.log(m)/Math.LN10)),f=m/e,n=f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10;return n*e}
+ function curve(P){/* spline morbida, senza sbalzi sotto/sopra i punti */
+  if(P.length===1)return 'M'+P[0][0]+' '+P[0][1];var d='M'+P[0][0].toFixed(1)+' '+P[0][1].toFixed(1);
+  for(var i=0;i<P.length-1;i++){var p0=P[i-1]||P[i],p1=P[i],p2=P[i+1],p3=P[i+2]||p2,t=.22;
+   var c1x=p1[0]+(p2[0]-p0[0])*t,c1y=p1[1]+(p2[1]-p0[1])*t,c2x=p2[0]-(p3[0]-p1[0])*t,c2y=p2[1]-(p3[1]-p1[1])*t,lo=Math.min(p1[1],p2[1]),hi=Math.max(p1[1],p2[1]);
+   c1y=Math.max(lo,Math.min(hi,c1y));c2y=Math.max(lo,Math.min(hi,c2y));
+   d+=' C'+c1x.toFixed(1)+' '+c1y.toFixed(1)+' '+c2x.toFixed(1)+' '+c2y.toFixed(1)+' '+p2[0].toFixed(1)+' '+p2[1].toFixed(1)}
+  return d}
+ /* o: {pts, series:[{k,name,color,dash}], w, h, title} */
+ function svg(o){var P=o.pts,n=P.length,w=o.w,h=o.h,L=58,R=18,T=14,B=62,pw=w-L-R,ph=h-T-B,mx=0;
+  o.series.forEach(function(s){P.forEach(function(p){if(p[s.k]!=null&&p[s.k]>mx)mx=p[s.k]})});
+  var top=nice(mx*1.08),X=function(i){return n===1?L+pw/2:L+i*pw/(n-1)},Y=function(v){return T+ph-(v/top)*ph},g='',i;
+  var yl='';for(i=0;i<=4;i++){var v=top*i/4,y=Y(v);g+='<line class="ch-g" x1="'+L+'" x2="'+(w-R)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'"/>';yl+='<text class="ch-t" x="'+(L-6)+'" y="'+(y+3).toFixed(1)+'" text-anchor="end">'+fm(v)+'</text>'}
+  g+='<line class="ch-ax" x1="'+L+'" x2="'+L+'" y1="'+T+'" y2="'+(T+ph)+'"/><line class="ch-ax" x1="'+L+'" x2="'+(w-R)+'" y1="'+(T+ph)+'" y2="'+(T+ph)+'"/>';
+  var gap=Math.max(1,Math.ceil(n/Math.max(2,Math.floor(pw/58))));
+  P.forEach(function(p,k){if(k!==n-1&&(k%gap!==0||n-1-k<gap*0.6))return;var x=X(k),y=T+ph+10;g+='<line class="ch-g" x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+(T+ph)+'" y2="'+(T+ph+4)+'"/><text class="ch-t" transform="rotate(-40 '+x.toFixed(1)+' '+y+')" x="'+x.toFixed(1)+'" y="'+y+'" text-anchor="end">'+lab(p.d)+'</text>'});
+  o.series.forEach(function(s){var seg=[],all=[];P.forEach(function(p,k){if(p[s.k]!=null){seg.push([X(k),Y(p[s.k])]);all.push([X(k),Y(p[s.k]),p[s.k]])}});
+   if(seg.length>1)g+='<path d="'+curve(seg)+'" fill="none" stroke="'+s.color+'" stroke-width="3" stroke-linecap="round"'+(s.dash?' stroke-dasharray="7 6"':'')+'/>';
+   if(!s.dash)all.forEach(function(a,j){var last=j===all.length-1;g+='<circle cx="'+a[0].toFixed(1)+'" cy="'+a[1].toFixed(1)+'" r="'+(last?6:5)+'" '+(last?'fill="'+s.color+'"':'class="ch-m"')+' stroke="'+s.color+'" stroke-width="2.5"/>'})});
+  var al=esc(o.title)+'. I numeri sono nella tabella sotto.';
+  if(o.px)return '<div style="display:flex;align-items:flex-start;width:'+w+'px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+L+' '+h+'" width="'+L+'" height="'+h+'" aria-hidden="true" style="position:sticky;left:0;z-index:2;background:var(--chbg);flex:none">'+yl+'<line class="ch-ax" x1="'+L+'" x2="'+L+'" y1="'+T+'" y2="'+(T+ph)+'"/></svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="'+L+' 0 '+(w-L)+' '+h+'" width="'+(w-L)+'" height="'+h+'" role="img" aria-label="'+al+'">'+g+'</svg></div>';
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+w+' '+h+'" width="100%" role="img" aria-label="'+al+'">'+g+yl+'</svg>'}
+ function pct(q,k){var v=q.filter(function(p){return p[k]!=null});if(v.length<2)return '';var a=v[0][k],b=v[v.length-1][k];if(!(a>0))return ' <b>n/d</b>';var r=Math.round((b-a)/a*100);return ' <b>'+(r>0?'+':'')+r+'%</b>'}
+ function legend(S,q){return '<div class="chl">'+S.map(function(s){return '<span><i'+(s.dash?' class="d"':'')+' style="border-color:'+s.color+'"></i>'+s.name+(s.dash||!q?'':pct(q,s.k))+'</span>'}).join('')+'</div>'}
+ var SS=[{k:'cont',name:'Contanti',color:COL.cont},{k:'conto',name:'Conto corrente',color:COL.conto},{k:'inv',name:'Investimenti',color:COL.inv}],
+     SF=[{k:'fund',name:'Fondo di emergenza',color:COL.fund},{k:'ftg',name:'Obiettivo del fondo',color:COL.ftg,dash:1}];
+ function conf(id){return id==='f'?{t:'Fondo di emergenza',S:SF}:{t:'I tuoi saldi',S:SS}}
+ function cls(){return SRC&&SRC().mobile?'chm':'chd'}
+ function chart(id,all){var src=SRC(),c=conf(id),P=pts(src.hist),Q=all?P:trail(P,new Date(),RNG[id]),hasF=id!=='f'||Q.some(function(p){return p.fund!=null});
+  var q=Q;if(id==='f')q=Q.filter(function(p){return p.fund!=null});
+  if(!q.length)return {html:'<p class="chn">'+(id==='f'?'Il fondo di emergenza si registra dal prossimo check-in: qui vedrai a quanto sei arrivato e se lo hai mantenuto.':'Ancora nessun check-in. Dopo il primo vedi qui i tuoi saldi.')+'</p>',n:0};
+  var w=all?Math.max(Math.min(window.innerWidth||360,900),q.length*70+70):(src.mobile?360:520),h=all?Math.max(280,(window.innerHeight||600)-150):(src.mobile?250:270);
+  var sv=svg({pts:q,series:c.S,w:w,h:h,px:all,title:c.t+(all?', tutto lo storico':', ultimi '+RNG[id]+' mesi')+', '+q.length+(q.length===1?' controllo':' check-in')});
+  return {html:sv+legend(c.S,q)+(q.length<2?'<p class="chn">C\'è un solo punto: dopo il prossimo check-in vedi anche la linea.</p>':''),n:q.length,P:q}}
+ function fundNote(){var src=SRC(),P=pts(src.hist).filter(function(p){return p.fund!=null});if(!P.length)return '';var l=P[P.length-1],mxp=0,mxd=null;P.slice(0,-1).forEach(function(p){if(p.fund>mxp){mxp=p.fund;mxd=p.d}});
+  var pc=l.ftg>0?Math.round(l.fund/l.ftg*100):null,h='<p class="chn"><b>'+eu(l.fund)+'</b>'+(l.ftg>0?' su '+eu(l.ftg)+' · <b>'+Math.min(pc,999)+'%</b> dell\'obiettivo':'')+' (al '+lab(l.d)+').</p>';
+  if(P.length>1){h+='<p class="chn">'+(l.fund>=mxp*0.98?'✅ Mantenuto: non è sceso dal massimo precedente.':'⚠️ Sceso di <b>'+eu(mxp-l.fund)+'</b> rispetto al massimo del '+lab(mxd)+'.')+'</p>'}
+  return h}
+ function goalsHtml(){var src=SRC(),P=pts(src.hist),l=P.length?P[P.length-1]:null,G=src.goals||{},b=l?{r:l.cont+l.conto,i:l.inv}:{r:nv(src.bal&&src.bal.cont)+nv(src.bal&&src.bal.conto),i:nv(src.bal&&src.bal.inv)},rows='';
+  [['6 mesi','6'],['1 anno','12'],['2 anni','24'],['5 anni','60']].forEach(function(z){var r=nv(G['r'+z[1]]),i=nv(G['i'+z[1]]);if(!(r>0)&&!(i>0))return;
+   function cell(v,t){return t>0?'<td><b>'+Math.min(999,Math.round(v/t*100))+'%</b><br><span style="font-size:11px;opacity:.75">'+eu(v)+' su '+eu(t)+'</span></td>':'<td>–</td>'}
+   rows+='<tr><td>'+z[0]+'</td>'+cell(b.r,r)+cell(b.i,i)+'</tr>'});
+  if(!rows)return '<p class="chn">Compila gli obiettivi a breve termine (passo 2) per vedere qui quanto ci sei vicino.</p>';
+  return '<table class="cht"><thead><tr><th>Obiettivo</th><th>Risparmio</th><th>Investimento</th></tr></thead><tbody>'+rows+'</tbody></table><p class="chn" style="font-size:11.5px;opacity:.8">Risparmio = contanti + conto corrente. Saldi dell\'ultimo check-in'+(l?' ('+lab(l.d)+')':'')+'.</p>'}
+ function tableHtml(all){var src=SRC(),P=pts(src.hist),Q=all?P:trail(P,new Date());if(!Q.length)return '';
+  return '<table class="cht"><thead><tr><th>Data</th><th>Contanti</th><th>Conto</th><th>Invest.</th><th>Fondo</th></tr></thead><tbody>'+Q.slice().reverse().map(function(p){return '<tr><td>'+lab(p.d)+'</td><td>'+eu(p.cont)+'</td><td>'+eu(p.conto)+'</td><td>'+eu(p.inv)+'</td><td>'+(p.fund!=null?eu(p.fund):'–')+'</td></tr>'}).join('')+'</tbody></table>'}
+ function rbar(id){return '<div class="chr" role="group" aria-label="Periodo">'+[3,6,12].map(function(m){return '<button type="button" data-chr="'+id+'|'+m+'" class="'+(RNG[id]===m?'on':'')+'">'+m+' mesi</button>'}).join('')+'</div>'}
+ function body(id){var c=chart(id);return rbar(id)+c.html}
+ function screen(getSrc){if(getSrc)SRC=getSrc;inject();var src=SRC(),a=chart('s'),b=chart('f'),mob=!!src.mobile;
+  return '<div class="'+cls()+'"><h3 class="q" style="margin:8px 0 2px">📈 Riepilogo annuale</h3><div class="mut chs" style="margin-bottom:8px;font-size:13px">Scegli 3, 6 o 12 mesi. Un punto per ogni check-in, con la data del saldo.</div>'
+  +'<div class="chg'+(mob?'':' chg2')+'"><div class="card chc" data-chb="s"><h4>I tuoi saldi</h4><div class="chs">Contanti, conto corrente e investimenti</div>'+rbar('s')+a.html+(a.n?'<button type="button" class="chb" data-chfs="s">⤢ Schermo intero · tutto lo storico</button>':'')+'</div>'
+  +'<div class="card chc" data-chb="f"><h4>Fondo di emergenza</h4><div class="chs">A quanto sei arrivato e se lo hai mantenuto</div>'+rbar('f')+b.html+(b.n?fundNote()+'<button type="button" class="chb" data-chfs="f">⤢ Schermo intero · tutto lo storico</button>':'')+'</div></div>'
+  +'<div class="card chc" style="margin-top:12px"><h4>🎯 Completamento degli obiettivi</h4>'+goalsHtml()+'</div>'
+  +'<details class="dd chc" style="margin-top:12px"><summary><span>Vedi i numeri</span></summary><div class="dd-in" style="padding:6px 0 10px">'+(tableHtml(false)||'<p class="chn">Nessun check-in ancora.</p>')+'</div></details></div>'}
+ /* schermo intero, scorrevole in orizzontale */
+ function fsOpen(id,all){inject();var el=document.getElementById('chfs');if(!el){el=document.createElement('div');el.id='chfs';el.className='chfs';document.body.appendChild(el)}
+  el.className='chfs '+cls();FS={id:id,all:all!==false};var c=chart(id,FS.all);
+  el.innerHTML='<div class="chfh"><b>'+conf(id).t+'</b><div class="r"><button type="button" data-chm="12" class="'+(FS.all?'':'on')+'">12 mesi</button><button type="button" data-chm="all" class="'+(FS.all?'on':'')+'">Tutto</button><button type="button" data-chx="1" aria-label="Chiudi">✕ Chiudi</button></div></div><div class="chfb">'+c.html+'</div>';
+  el.hidden=false;var b=el.querySelector('.chfb');if(b)b.scrollLeft=b.scrollWidth}
+ function fsClose(){var el=document.getElementById('chfs');if(el)el.hidden=true;FS=null}
+ document.addEventListener('click',function(e){var t=e.target&&e.target.closest?e.target:null;if(!t)return;var r=t.closest('[data-chr]');if(r){var a=r.getAttribute('data-chr').split('|'),box=r.closest('[data-chb]');RNG[a[0]]=+a[1];if(box){var tt=box.querySelector('h4').outerHTML+box.querySelector('.chs').outerHTML,ex=box.querySelector('.chn:last-of-type'),btn=box.querySelector('.chb'),c=chart(a[0]);var extra=a[0]==='f'?fundNote():'';box.innerHTML=tt+rbar(a[0])+c.html+(c.n?extra+btn.outerHTML:'')}return}var f=t.closest('[data-chfs]');if(f){e.preventDefault();fsOpen(f.getAttribute('data-chfs'),true);return}
+  if(t.closest('[data-chx]')){fsClose();return}var m=t.closest('[data-chm]');if(m&&FS)fsOpen(FS.id,m.getAttribute('data-chm')==='all')});
+ document.addEventListener('keydown',function(e){if(e.key==='Escape'&&FS)fsClose()});
+ return {screen:screen,pts:pts,trail:trail,svg:svg,pdt:pdt,lab:lab,open:fsOpen}})();
+
 /*TTSA: schede "Si avvicina" (norme verificate al 20/11/2026)*/
 var TTSA=(function(){
 function pdt(s){var m=/^\s*(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})\s*$/.exec(String(s||''));if(!m)return null;var d=new Date(+m[3],+m[2]-1,+m[1]);return d.getMonth()===+m[2]-1?d:null}
@@ -855,6 +942,7 @@ details.qh{margin-top:6px}details.qh summary{cursor:pointer;font-size:.85rem;opa
 .oth-ck{display:flex;gap:8px;align-items:center;padding:6px 0;font-size:inherit}.oth-ck input{width:20px;height:20px}
 .qh-w{position:relative}.qh{position:absolute;top:0;right:0;width:20px;height:20px;border-radius:50%;border:1.5px solid #2e9b57;background:transparent;color:#2e9b57;font:700 .72rem/1 var(--f-body);cursor:pointer;display:grid;place-items:center;padding:0}.qh:hover{background:rgba(46,155,87,.12)}
 .mini input{width:100%}.mini td,.mini th{padding:6px 8px}
+.ofw{overflow-x:auto}.oft{width:100%;border-collapse:collapse;font-size:.9rem}.oft th,.oft td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--line);vertical-align:top}.oft th:first-child,.oft td:first-child{text-align:left}.oft tr.tot td{font-weight:800}.oft .best{background:var(--ok-bg)}
 </style><style>.pol-b{padding:2px 12px 12px;font-size:13px;line-height:1.5;max-height:55vh;overflow:auto}.pol-b h4{margin:12px 0 4px;font-size:13.5px}.pol-b p{margin:0 0 6px}.pol-b ul{margin:0 0 6px;padding-left:18px}.pol-b a{word-break:break-all}.pol-td{background:#ffe9a8;color:#5b3a00;border-radius:4px;padding:0 3px}.pol-w{background:rgba(120,140,130,.15);border-radius:8px;padding:6px 8px;font-size:12.5px}.pol-lk{color:#1a5fd0;text-decoration:underline;cursor:pointer}@media(prefers-color-scheme:dark){.pol-lk{color:#7fb0ff}}[data-mode=dark] .pol-lk,[data-theme=dark] .pol-lk,.dark .pol-lk{color:#7fb0ff}</style>
 
 <div class="wrap">
@@ -916,7 +1004,7 @@ details.qh{margin-top:6px}details.qh summary{cursor:pointer;font-size:.85rem;opa
     <div class="tg" role="presentation"><span class="tgl hl">Il tuo futuro</span><div class="tgb" role="presentation"><button role="tab" id="t-invest" data-tab="invest" aria-selected="false">Le basi dell'investire<span class="ps" aria-label="passi 6"><i>6</i></span></button><button role="tab" id="t-calc" data-tab="calc" aria-selected="false">La tua proiezione</button><button role="tab" id="t-pens" data-tab="pens" aria-selected="false">Piano a lungo termine<span class="ps" aria-label="passi 6, 7"><i>6</i><i>7</i></span></button></div></div>
   <span class="tgbr" aria-hidden="true"></span>
     <div class="tg" role="presentation"><span class="tgl">Dubbi?</span><div class="tgb" role="presentation"><button role="tab" id="t-faq" data-tab="faq" aria-selected="false">Domande frequenti</button></div></div>
-    <div class="tg" role="presentation"><span class="tgl">Calendario</span><div class="tgb" role="presentation"><button type="button" id="t-cal" data-anchor="h-cal">Si avvicina</button><button type="button" id="t-ck" data-anchor="h-ck">Check-in di fine mese</button></div></div>
+    <div class="tg" role="presentation"><span class="tgl">Calendario</span><div class="tgb" role="presentation"><button type="button" id="t-cal" data-anchor="h-cal">Si avvicina</button><button type="button" id="t-ck" data-anchor="h-ck">Check-in di fine mese</button><button type="button" id="t-ann" data-anchor="h-hist">Riepiloghi</button></div></div>
   </nav>
   <p class="tg-note">I numeri sui pulsanti indicano i passi del percorso che completi in quella sezione.</p>
 </header>
@@ -943,6 +1031,7 @@ details.qh{margin-top:6px}details.qh summary{cursor:pointer;font-size:.85rem;opa
   <div class="card" id="h-ck" style="margin-bottom:14px"></div>
   <div class="card" id="h-month" style="margin-bottom:14px"></div>
   <div class="card" id="h-cal" style="margin-bottom:14px"></div>
+  <div class="card" id="h-club" style="margin-bottom:14px" hidden></div>
   <div class="card" id="h-hist" style="margin-bottom:14px"></div>
   <div class="path" id="percorso">
     <h2>Come sta andando il mio percorso?</h2>
@@ -955,7 +1044,7 @@ details.qh{margin-top:6px}details.qh summary{cursor:pointer;font-size:.85rem;opa
 </section>
 
 <section id="p-contratto" role="tabpanel" aria-labelledby="t-contratto" hidden>
-  <div class="cwin"><label class="l" for="cw-sel">Cosa vuoi fare?</label><select class="cw-sel" aria-label="Scegli cosa fare nel contratto"><option value="contratto">Che contratto devo avere?</option><option value="conformita">Sono in regola?</option><option value="netto">Quanto mi resta?</option></select></div>
+  <div class="cwin"><label class="l" for="cw-sel">Cosa vuoi fare?</label><select class="cw-sel" aria-label="Scegli cosa fare nel contratto"><option value="contratto">Che contratto devo avere?</option><option value="conformita">Sono in regola?</option><option value="netto">Quanto mi resta?</option><option value="offerte">Confronta offerte</option></select></div>
   <h2>Che contratto devo avere?</h2>
   <p class="lead">Inserisci il tuo caso. Ottieni il tipo di contratto corretto, se è in regola e quanto ti resta in tasca.</p>
   <div class="card" id="eng-form">
@@ -992,7 +1081,7 @@ details.qh{margin-top:6px}details.qh summary{cursor:pointer;font-size:.85rem;opa
 
 <!-- CONFORMITA -->
 <section id="p-conformita" role="tabpanel" aria-labelledby="t-contratto" hidden>
-  <div class="cwin"><label class="l" for="cw-sel">Cosa vuoi fare?</label><select class="cw-sel" aria-label="Scegli cosa fare nel contratto"><option value="contratto">Che contratto devo avere?</option><option value="conformita">Sono in regola?</option><option value="netto">Quanto mi resta?</option></select></div>
+  <div class="cwin"><label class="l" for="cw-sel">Cosa vuoi fare?</label><select class="cw-sel" aria-label="Scegli cosa fare nel contratto"><option value="contratto">Che contratto devo avere?</option><option value="conformita">Sono in regola?</option><option value="netto">Quanto mi resta?</option><option value="offerte">Confronta offerte</option></select></div>
   <h2>Sono in regola?</h2>
   <p class="lead">Poche domande sul tuo accordo con il club (le risposte già date nel passo «Che contratto» non si ripetono). Rispondi con quello che sai. "Non so" conta come punto da verificare.</p>
   <div class="card" id="comp-q"></div>
@@ -1001,7 +1090,7 @@ details.qh{margin-top:6px}details.qh summary{cursor:pointer;font-size:.85rem;opa
 
 <!-- NETTO -->
 <section id="p-netto" role="tabpanel" aria-labelledby="t-contratto" hidden>
-  <div class="cwin"><label class="l" for="cw-sel">Cosa vuoi fare?</label><select class="cw-sel" aria-label="Scegli cosa fare nel contratto"><option value="contratto">Che contratto devo avere?</option><option value="conformita">Sono in regola?</option><option value="netto">Quanto mi resta?</option></select></div>
+  <div class="cwin"><label class="l" for="cw-sel">Cosa vuoi fare?</label><select class="cw-sel" aria-label="Scegli cosa fare nel contratto"><option value="contratto">Che contratto devo avere?</option><option value="conformita">Sono in regola?</option><option value="netto">Quanto mi resta?</option><option value="offerte">Confronta offerte</option></select></div>
   <h2 id="sim-h">Quanto mi resta, per categoria</h2>
   <p class="lead" id="sim-lead">Metti il compenso lordo annuo che ti offrono in ogni categoria. Il fisco è uguale per tutte, cambia solo quanto il club paga e che tipo di accordo usa.</p>
   <div class="card oth-w" id="oth-sim" style="margin-bottom:14px"></div>
@@ -1044,6 +1133,20 @@ details.qh{margin-top:6px}details.qh summary{cursor:pointer;font-size:.85rem;opa
 </section>
 
 <!-- BUDGET -->
+<section id="p-offerte" role="tabpanel" aria-labelledby="t-contratto" hidden>
+  <div class="cwin"><label class="l" for="cw-sel">Cosa vuoi fare?</label><select class="cw-sel" aria-label="Scegli cosa fare nel contratto"><option value="contratto">Che contratto devo avere?</option><option value="conformita">Sono in regola?</option><option value="netto">Quanto mi resta?</option><option value="offerte">Confronta offerte</option></select></div>
+  <h2>Confronta offerte</h2>
+  <p class="lead">Metti fino a 3 offerte affiancate: ti calcolo il netto di ognuna e ti dico quale conviene. Sempre disponibile.</p>
+  <div class="card" style="margin-bottom:14px"><h3>Dati uguali per tutte le offerte</h3><div id="oth-off"></div>
+    <div class="fields" style="margin-top:10px"><div><label class="l" for="f_add">Addizionali regionali e comunali</label><div class="suf"><input type="text" inputmode="decimal" id="f_add" data-k="sim.add" data-r="offerte"></div></div></div>
+    <label class="chk" for="f_rinc"><input type="checkbox" id="f_rinc" data-k="sim.rinc" data-r="offerte"><span>I rimborsi sono già dentro il compenso lordo (se non spunti, il club li paga in più).</span></label>
+    <label class="chk" for="f_rid"><input type="checkbox" id="f_rid" data-k="sim.rid" data-r="offerte"><span>INPS previdenziale su metà base (vale fino al 31 dicembre 2027).</span></label>
+    <label class="chk" for="f_min"><input type="checkbox" id="f_min" data-k="sim.min" data-r="offerte"><span>Calcola l'INPS sul minimale, come le tabelle AIC (più alto se il compenso è basso).</span></label>
+  </div>
+  <div id="off-cards"></div>
+  <div class="card"><h3>Confronto</h3><div id="off-res"></div></div>
+</section>
+
 <section id="p-budget" role="tabpanel" aria-labelledby="t-budget" hidden>
   <div class="intro"><h3>Perché partire dal budget</h3><ul>
     <li>Il budget è il tuo primo vero passo verso la libertà ed indipendenza finanziaria.</li>
@@ -1476,7 +1579,7 @@ function othHTML(){var o=S.oth||{},bn=budNet(),y=(o.tipo==='dip'||o.tipo==='aut'
    +'<p class="sub oth-sum" role="status">'+othSum()+'</p>'
    +'<div class="oth-note"><b>INPS e INAIL non si sommano all\'altro reddito:</b> si calcolano solo sul compenso sportivo. <b>L\'IRPEF invece sì:</b> la parte di compenso sportivo sopra 15.000 € si somma all\'altro imponibile, quindi conta in che fascia cadi. Verifica con un professionista.</div>'}
   return h}
-function othRender(){['eng','sim'].forEach(function(k){var el=document.getElementById('oth-'+k);if(!el)return;var a=document.activeElement;if(a&&el.contains(a)&&a.tagName==='INPUT')return;el.innerHTML=othHTML().replace(/_X/g,'_'+k)});_othKey=othKey()}
+function othRender(){['eng','sim','off'].forEach(function(k){var el=document.getElementById('oth-'+k);if(!el)return;var a=document.activeElement;if(a&&el.contains(a)&&a.tagName==='INPUT')return;el.innerHTML=othHTML().replace(/_X/g,'_'+k)});_othKey=othKey()}
 function othUpdate(){var s=othSum();$$('.oth-sum').forEach(function(e){e.innerHTML=s});$$('[data-o="imp"]').forEach(function(e){if(e!==document.activeElement)e.value=(S.oth||{}).imp||''});$$('[data-o="netm"]').forEach(function(e){if(e!==document.activeElement)e.value=(S.oth||{}).netm||''});$$('[data-o="neta"]').forEach(function(e){if(e!==document.activeElement)e.value=(S.oth||{}).neta||''})}
 function syncAltro(){var v=String(Math.round(othImp().v));S.eng.altro=v;S.sim.altro=v;if(othKey()!==_othKey)othRender();else othUpdate()}
 document.addEventListener('input',function(e){var t=e.target,k=t&&t.getAttribute&&t.getAttribute('data-o');if(!k||k==='tipo')return;S.oth[k]=t.value;save();renderAll()});
@@ -1574,6 +1677,7 @@ function useBud(net,ri,btn){
 function alert0(t,el){var s=document.createElement('div');s.className='sub';s.textContent=t;s.setAttribute('role','status');el.insertAdjacentElement('afterend',s);setTimeout(function(){s.remove()},3500);R.bud&&R.bud()}
 
 /* ---------- Compliance ---------- */
+window.ttClubList=function(){var c=S.comp||{},L=[];if((S.eng||{}).reg==='nso')L.push(['Club nel Registro ASD/SSD','Cerca il nome del club su registro.sportesalute.eu.']);NSO.forEach(function(n){if(c[n[0]]==='nso')L.push([n[1],n[2]])});return L};
 /* ---------- elenco "Non so" / da chiedere al club ---------- */
 var NSO=[['q1','Copia firmata del contratto','Chiedi al club una copia del contratto firmata.','conformita'],['q2','Deposito del contratto in Lega','Chiedi alla segreteria la prova del deposito.','conformita'],['q4','Compenso uguale al contratto','Confronta gli estratti conto con il compenso scritto.','conformita'],['q5','Certificazione Unica (CU)','Chiedi al club se la rilascia ogni anno e cercala nel cassetto fiscale.','conformita'],['q6','Contributi INPS e INAIL','Chiedi al club di versarli e controlla su <a class="lnk-b" href="https://serviziweb2.inps.it/AS0207/PassiLogin/jsp/spid/loginSPID.jsp?uri=https%3a%2f%2fservizi2.inps.it%2fservizi%2fareariservata&amp;S=S" target="_blank" rel="noopener">MyINPS ↗</a>.','conformita','q6'],['q9','Busta paga mensile','Chiedi al club una copia cartacea ogni mese: da lì controlli compenso e trattenute INPS/INAIL.','conformita'],['q7','Copertura infortuni','Chiedi copia della polizza del tesseramento.','conformita'],['q8','Rimborsi documentati','Chiedi quali giustificativi servono.','conformita','faq']];
 function nsoRender(){
@@ -1647,6 +1751,24 @@ var COLS_ALL=[['lD','Serie D','Lavoro sportivo (co.co.co.) o accordo depositato 
 var COLS=COLS_ALL;
 var AIC_T='https://www.assocalciatori.it/sites/default/files/attachment/pagina/SPORT-CO.CO_.CO_LORDO-NETTO-VALORI-2026.pdf';
 var AIC_N='https://www.assocalciatori.it/sites/default/files/attachment/pagina/NOTE-INTRODUTTIVE-2026.pdf';
+function OFFS(){if(!Array.isArray(S.off)||S.off.length!==3)S.off=[0,1,2].map(function(){return {n:'',cat:'Serie D',l:'',m:'',r:''}});return S.off}
+function tesc(x){return String(x==null?'':x).replace(/[<>&"]/g,'')}
+function mnn(v){return Math.round(v)>0?'−'+eur(v):eur(0)}
+function offCalc(){var altro=othImp().v,inc=!!S.sim.rinc;return OFFS().map(function(o,i){var Ca=num(o.l);if(!(Ca>0))return null;var ri=num(o.r),rE=inc?Math.min(ri,Ca):ri,r=calc(inc?Math.max(0,Ca-rE):Ca,altro),mesi=mesiPag(o.m),tot=r.net+rE;return {i:i,n:o.n||('Offerta '+'ABC'.charAt(i)),cat:o.cat,Ca:Ca,rE:rE,mesi:mesi,r:r,tot:tot,mm:tot/mesi,rem:r.w+r.tax+r.add,cost:r.cost+(inc?0:rE)}}).filter(function(x){return x})}
+function offOut(){var L=offCalc();if(L.length<2)return '<p class="sub" style="margin:0">Scrivi il compenso lordo di almeno <b>due offerte</b> per vedere il confronto.</p>';
+ var bt=L.reduce(function(a,b){return b.tot>a.tot?b:a}),bm=L.reduce(function(a,b){return b.mm>a.mm?b:a});
+ function row(lab,f,cls,best){return '<tr'+(cls?' class="'+cls+'"':'')+'><td>'+lab+'</td>'+L.map(function(x){return '<td'+(best&&best(x)?' class="best"':'')+'>'+f(x)+'</td>'}).join('')+'</tr>'}
+ var h='<div class="ofw"><table class="oft"><thead><tr><th></th>'+L.map(function(x){return '<th>'+tesc(x.n)+'<br><span class="sub" style="font-weight:400">'+x.cat+'</span></th>'}).join('')+'</tr></thead><tbody>'
+ +row('Compenso lordo',function(x){return eur(x.Ca)})+row('Rimborsi esenti',function(x){return x.rE>0?'+'+eur(x.rE):'–'})+row('INPS a tuo carico',function(x){return mnn(x.r.w)})+row('IRPEF e addizionali',function(x){return mnn(x.r.tax+x.r.add)})
+ +row('Netto annuo',function(x){return eur(x.tot)},'tot',function(x){return x===bt})+row('Mesi di pagamento',function(x){return x.mesi})+row('Netto al mese',function(x){return eur(x.mm)},'tot',function(x){return x===bm})+row('Costo per il club',function(x){return eur(x.cost)})+'</tbody></table></div>';
+ var sorted=L.slice().sort(function(a,b){return b.tot-a.tot}),d=sorted[0].tot-sorted[1].tot;
+ h+='<p style="margin:10px 0 0"><b>'+tesc(bt.n)+'</b> è l\'offerta con più netto all\'anno'+(d>=1?': <b>+'+eur(d)+'</b> rispetto alla seconda ('+tesc(sorted[1].n)+').':'.')+(bm!==bt?'<br>Se conti il netto <b>al mese</b>, conviene <b>'+tesc(bm.n)+'</b> ('+eur(bm.mm)+' al mese): cambiano i mesi in cui il club ti paga.':'')+'</p>'
+ +'<p class="sub" style="margin:6px 0 0">Stima con le regole del simulatore (stesso fisco per tutte le categorie, opzioni e altro reddito qui sopra). Non conta il resto: durata, premi, diritti, spese. Fai confermare la cifra da un professionista prima di firmare.</p>';
+ return h}
+function offCards(){return OFFS().map(function(o,i){var c='ABC'.charAt(i);function inp(l,k,ph,e){return '<div><label class="l">'+l+'</label>'+(e?'<div class="eur"><input type="text" data-of="'+i+'|'+k+'" inputmode="decimal" value="'+tesc(o[k])+'" placeholder="'+ph+'"></div>':'<input type="text" data-of="'+i+'|'+k+'" inputmode="'+(k==='m'?'numeric':'text')+'" value="'+tesc(o[k])+'" placeholder="'+ph+'">')+'</div>'}
+ return '<div class="card" style="margin-bottom:14px"><h3>Offerta '+c+'</h3><div class="fields f3">'+inp('Squadra','n','Nome del club',0)+'<div><label class="l">Categoria</label><select data-of="'+i+'|cat">'+['Serie D','Eccellenza','Promozione','Prima Categoria','Seconda Categoria','Terza Categoria'].map(function(x){return '<option'+(o.cat===x?' selected':'')+'>'+x+'</option>'}).join('')+'</select></div>'+inp('Compenso lordo annuo','l','0',1)+inp('Mesi in cui il club ti paga','m','10',0)+inp('Rimborsi spese esenti (€ l\'anno)','r','0',1)+'</div></div>'}).join('')}
+R.offerte=function(full){syncAltro();var c=document.getElementById('off-cards'),r=document.getElementById('off-res');if(!c||!r)return;if(full===true||!c.innerHTML)c.innerHTML=offCards();r.innerHTML=offOut()};
+document.addEventListener('input',function(e){var t=e.target,of=t&&t.getAttribute&&t.getAttribute('data-of');if(!of)return;var o=of.split('|');OFFS()[+o[0]][o[1]]=t.value;save();var r=document.getElementById('off-res');if(r)r.innerHTML=offOut()});
 R.sim=function(){
   syncAltro();COLS=activeCols();
   var sh=document.getElementById('sim-h'),sl=document.getElementById('sim-lead');if(sh&&sl){if(COLS.length===1){sh.textContent='Quanto mi resta in '+COLS[0][1];sl.textContent='Metti il compenso lordo annuo che ti offrono. La categoria è quella che hai scelto nel passo «Che contratto devo avere?»: se vuoi cambiarla, cambiala lì.'}else{sh.textContent='Quanto mi resta, per categoria';sl.textContent='Metti il compenso lordo annuo che ti offrono in ogni categoria. Il fisco è uguale per tutte, cambia solo quanto il club paga e che tipo di accordo usa.'}}
@@ -3276,6 +3398,8 @@ var LKREQ={budget:0,obiettivi:1,home:1,contratto:2,conformita:2,netto:2,fondo:3,
 function tabLocked(t){if(t==='percorso'||t==='faq'||!(t in LKREQ))return false;if(t==='budget')return !(S.ub||(S.unl||0)>=1);return (S.unl||0)<LKREQ[t]}
 function refreshLocks(){
   if(pCur()>(S.unl||0)){S.unl=pCur();save()}
+  $$('#p-pens .lsb').forEach(function(b){var k=b.getAttribute('data-sub'),L=(k==='cons'||k==='pens')&&(S.unl||0)<6,base=b.getAttribute('data-t')||b.textContent.replace(/\s*\ud83d\udd12$/,'');b.setAttribute('data-t',base);b.textContent=base+(L?' \ud83d\udd12':'')});
+  
   $$('.tabs [data-tab]').forEach(function(b){var L=tabLocked(b.getAttribute('data-tab')),k=b.querySelector('.lk');
     b.classList.toggle('locked',L);b.setAttribute('aria-disabled',L?'true':'false');
     if(L&&!k)b.insertAdjacentHTML('beforeend',LKSVG);else if(!L&&k)k.remove()});
@@ -3295,24 +3419,26 @@ document.querySelectorAll('#p-obiettivi .lsb').forEach(function(b){b.addEventLis
 document.addEventListener('click',function(e){var q=e.target.closest&&e.target.closest('[data-qm]');if(!q)return;e.preventDefault();var t=document.getElementById(q.getAttribute('data-qm'));if(!t)return;t.hidden=!t.hidden;q.setAttribute('aria-expanded',t.hidden?'false':'true')});sub('comp',1);
 function fsub(k,ns){try{if(window.__subRec){(S.sb=S.sb||{}).fondo=k;save()}}catch(e){}document.querySelectorAll('#p-fondo .lsub').forEach(function(d){d.hidden=(d.id!=='sub-'+k)});document.querySelectorAll('#p-fondo .lsb').forEach(function(b){b.setAttribute('aria-pressed',b.getAttribute('data-sub')===k?'true':'false')});var t=document.querySelector('#sub-'+k);if(t&&!ns&&t.scrollIntoView){try{t.scrollIntoView({block:'start',behavior:'smooth'})}catch(e){}}}
 fsub('f-reg',1);document.querySelectorAll('#p-fondo .lsb').forEach(function(b){b.addEventListener('click',function(){fsub(b.getAttribute('data-sub'))})});
-document.querySelectorAll('#p-pens .lsb').forEach(function(b){b.addEventListener('click',function(){sub(b.getAttribute('data-sub'))})})})();
+document.querySelectorAll('#p-pens .lsb').forEach(function(b){b.addEventListener('click',function(){var k=b.getAttribute('data-sub');if((k==='cons'||k==='pens')&&(S.unl||0)<6){var P=window.ttPerc&&window.ttPerc.all,m='Si sblocca quando completi il <b>passo 6'+(P&&P[5]?' «'+P[5].t+'»':'')+'</b> in «Il mio percorso».',f=function(){showTab('percorso');window.scrollTo(0,0)};if(window.ttConfirm)window.ttConfirm('<b>Sezione bloccata</b> \ud83d\udd12 '+m,'Vai al percorso',f,'Ok');else f();return}sub(k)})})})();
 
 
 document.addEventListener('input',function(e){var t=e.target;if(!t||t.tagName!=='INPUT'||t.getAttribute('inputmode')!=='decimal')return;var v=t.value.trim(),neg=/^-/.test(v),bad=v&&(neg||/[a-zA-Z]/.test(v));t.classList.toggle('bad-in',!!bad);var p=t.parentNode,m=p.querySelector('.badm');if(bad){if(!m){m=document.createElement('div');m.className='badm';m.setAttribute('role','alert');p.appendChild(m)}m.textContent=neg?'Scrivi una cifra positiva (es. 300)':'Scrivi solo numeri (es. 300)'}else if(m)m.remove()},true);
 function showTab(t){
   S.tab=t;
-  $$('[data-tab]').forEach(function(b){var bt=b.getAttribute('data-tab');b.setAttribute('aria-selected',(bt===t||(bt==='contratto'&&(t==='conformita'||t==='netto')))?'true':'false')});
-  $$('.cw-sel').forEach(function(s){if(t==='contratto'||t==='conformita'||t==='netto')s.value=t});
-  ['percorso','home','contratto','conformita','netto','budget','obiettivi','fondo','debiti','invest','calc','pens','faq'].forEach(function(x){$('#p-'+x).hidden=(x!==t)});
+  $$('[data-tab]').forEach(function(b){var bt=b.getAttribute('data-tab');b.setAttribute('aria-selected',(bt===t||(bt==='contratto'&&(t==='conformita'||t==='netto'||t==='offerte')))?'true':'false')});
+  $$('.cw-sel').forEach(function(s){if(t==='contratto'||t==='conformita'||t==='netto'||t==='offerte')s.value=t});
+  ['percorso','home','contratto','conformita','netto','offerte','budget','obiettivi','fondo','debiti','invest','calc','pens','faq'].forEach(function(x){$('#p-'+x).hidden=(x!==t)});
+  $$('[data-k^="sim."]').forEach(function(el){if(el===document.activeElement)return;var v=getP(el.getAttribute('data-k'));if(el.type==='checkbox')el.checked=!!v;else if(v!=null)el.value=v});
   save();
   if(window.ttSection)window.ttSection(t);
+  if(t==='offerte'){try{R.offerte(true)}catch(e){}}
   if(t==='budget'||t==='obiettivi'||t==='invest'||t==='calc'||t==='pens')R.bud();
   if(t==='home')R.home();
   if(t==='faq')R.faq();
   if(t==='fondo'||t==='debiti'){try{if(t==='fondo')renderAcc();updatePerc()}catch(e){}}
   if(t==='percorso'){updatePerc();closeDone(pCur());var dd=$('#step-'+(pCur()+1));if(dd)dd.open=true}
   fitSoon();
-  var ab=$('[data-tab="'+((t==='conformita'||t==='netto')?'contratto':t)+'"]'),tb=$('.tabs');if(ab&&tb&&tb.scrollWidth>tb.clientWidth)tb.scrollLeft=ab.offsetLeft-tb.clientWidth/2+ab.offsetWidth/2;
+  var ab=$('[data-tab="'+((t==='conformita'||t==='netto'||t==='offerte')?'contratto':t)+'"]'),tb=$('.tabs');if(ab&&tb&&tb.scrollWidth>tb.clientWidth)tb.scrollLeft=ab.offsetLeft-tb.clientWidth/2+ab.offsetWidth/2;
 }
 $$('.cw-sel').forEach(function(s){s.addEventListener('change',function(){showTab(s.value)})});
 $$('[data-tab]').forEach(function(b){b.addEventListener('click',function(){var t=b.getAttribute('data-tab');if(tabLocked(t)){lockedMsg(t);return}showTab(t)})});
@@ -3410,7 +3536,9 @@ function fillBal(){var b=ttBal(),B=calcBud(),avM=B.sur/12,sv=B.T.SV/12,fr=avM-sv
 function balCard(){var bl=ttBal(),tot=bl.r+bl.i,bh='<h3>I miei saldi oggi</h3>';
   if(tot<=0)return bh+'<p class="sub" style="margin:0 0 10px">Scrivi quanto hai oggi in contanti, sul conto e investito.</p><button class="btn ghost" type="button" data-go2="budget">Inserisci i saldi</button>';
   bh+='<div class="bal-big">'+eur(tot)+'</div>';
+  try{bh+=TTCH.mini(function(){return {mobile:false,hist:(S.soloMobile&&S.soloMobile.hist)||[]}})}catch(x){}
   [['Contanti',bl.c],['Conto corrente',bl.cc],['Investiti',bl.i]].forEach(function(r){bh+='<div class="br"><span>'+r[0]+'</span><b>'+eur(r[1])+' · '+pct(r[1]/tot)+'</b></div><div class="bar gap"><i style="width:'+(r[1]/tot*100)+'%"></i></div>'});
+  try{var ft=num(S.fund.mesi)*pMonthly(),fs=fundSaved();if(ft>0){var fp=Math.max(0,Math.round(fs/ft*100));bh+='<div class="br"><span>Fondo di emergenza</span><b>'+(fs>=ft?'✅ Completato · '+eur(fs):fp+'%')+'</b></div><div class="bar gap"><i style="width:'+Math.min(100,fp)+'%"></i></div>'}}catch(x){}
   return bh}
 function goalCards(GD){var bl=ttBal(),G=S.goals||{},ret=numP(G.ret),rows=GD.rows||[];
   if(!rows.length)return '<div class="card"><p class="sub" style="margin:0 0 10px">Non hai ancora impostato gli obiettivi a breve termine.</p><button class="btn ghost" type="button" data-go2="obiettivi">Imposta gli obiettivi</button></div>';
@@ -3451,7 +3579,7 @@ function RS(t,c){return '<div class="sub" style="margin:2px 0 6px;color:'+c+'">'
 function histBody(e){var tot=num(e.bal.cont)+num(e.bal.conto)+num(e.bal.inv),bp=e.balPrev||{cont:0,conto:0,inv:0},tp=num(bp.cont)+num(bp.conto)+num(bp.inv),G='var(--ok,#1f7a4d)',Y='#a87400',M='var(--muted)';
   var h='<h4 class="ck-h">Cosa è successo</h4>'+RR('Stipendio',e.sal?'✅ entrato il '+esc(e.sald):'non ancora entrato');
   if(e.spent>0){var diff=e.prev-e.spent;h+=RR('Spese del mese',eur(e.spent))+RS('Previsto dal budget: '+eur(e.prev),M);
-    if(diff>=0){h+=RS('👏 Bravo! Hai speso '+eur(diff)+' in meno del previsto.',G);if(e.dest)h+=RS({avanzo:'La differenza l\'hai messa nell\'avanzo.',speso:'La differenza l\'hai spesa in altro.',nessuna:'Alla differenza non hai dato una destinazione precisa.'}[e.dest]||'',M)}
+    if(diff>=0){h+=RS('👏 '+(S.prof&&S.prof.sex==='f'?'Brava':'Bravo')+'! Hai speso '+eur(diff)+' in meno del previsto.',G);if(e.dest)h+=RS({avanzo:'La differenza l\'hai messa nell\'avanzo.',speso:'La differenza l\'hai spesa in altro.',nessuna:'Alla differenza non hai dato una destinazione precisa.'}[e.dest]||'',M)}
     else h+=RS('Hai speso '+eur(-diff)+' in più del previsto'+(e.why?', per '+(e.why==='voce'?'una voce non inserita nel budget':'una spesa imprevista'):'')+'.',Y);
     if(e.prevM>0){var dm=e.spent-e.prevM;h+=RS('Rispetto al mese scorso ('+eur(e.prevM)+'): '+(dm<=0?eur(-dm)+' in meno':eur(dm)+' in più')+'.',dm<=0?G:Y)}}
   else h+=RR('Spese del mese','non indicate');
@@ -3465,7 +3593,7 @@ function mon(lbl,grp,k,tg){var c=SM().chk,v=grp==='bal'?(c.bal||{})[k]:(grp==='o
   return '<div class="ck-r"><div><label>'+lbl+'</label>'+(tg>0?'<div class="sub" style="margin:0">Obiettivo: <b>'+eur(tg)+'</b> al mese</div>':'')+'</div><div class="eur"><input type="text" inputmode="decimal" placeholder="0" data-ck="'+grp+'|'+k+'" aria-label="'+esc(lbl)+'" value="'+esc(v==null?'':v)+'"></div></div>'}
 function spendMsg(){var c=SM().chk,k=K(),sp=num(c.spent),prev=k.spM;if(!(sp>0))return '';var diff=prev-sp,h='';
   function opts(arr,cur,nm){return '<div class="ck-o">'+arr.map(function(o){return '<button type="button" class="btn'+(cur===o[0]?'':' ghost')+'" data-ckc="'+nm+'|'+o[0]+'">'+o[1]+'</button>'}).join('')+'</div>'}
-  if(diff>=0){h='<p class="ck-m ok">👏 Bravo! Hai speso <b>'+eur(sp)+'</b>, cioè <b>'+eur(diff)+' in meno</b> del previsto ('+eur(prev)+').</p><p class="sub">Che destinazione hai dato ai soldi che non hai speso?</p>'+opts([['avanzo','Avanzo'],['speso','Spesi in altro'],['nessuna','Nessuna in particolare']],c.dest,'dest');
+  if(diff>=0){h='<p class="ck-m ok">👏 '+(S.prof&&S.prof.sex==='f'?'Brava':'Bravo')+'! Hai speso <b>'+eur(sp)+'</b>, cioè <b>'+eur(diff)+' in meno</b> del previsto ('+eur(prev)+').</p><p class="sub">Che destinazione hai dato ai soldi che non hai speso?</p>'+opts([['avanzo','Avanzo'],['speso','Spesi in altro'],['nessuna','Nessuna in particolare']],c.dest,'dest');
     if(c.dest==='avanzo')h+='<p class="sub">Il tuo avanzo di '+MESE+' sale a <b>'+eur(k.avM+diff)+'</b> (era '+eur(k.avM)+').</p>'}
   else{h='<p class="ck-m warn">Hai speso <b>'+eur(sp)+'</b>, cioè <b>'+eur(-diff)+' in più</b> del previsto ('+eur(prev)+').</p><p class="sub">A cosa è dovuto?</p>'+opts([['voce','Una voce non inserita nel budget'],['imprevisto','Una spesa imprevista']],c.why,'why');
     if(c.why==='voce')h+='<p class="sub">Allora conviene correggere il budget, così i prossimi mesi saranno giusti.</p><button type="button" class="btn ghost" data-go2="budget">Modifica il budget</button>';
@@ -3492,29 +3620,44 @@ function confirmCk(){var m=SM(),c=m.chk,k=K(),L=sched(),lastH=m.hist.length?m.hi
   if(s.spent>0)m.cal.push({d:d,t:'Spese di '+MESE+': '+eur(s.spent)+' (previsto '+eur(s.prev)+')'});
   if(adds.length)m.cal.push({d:d,t:'Messo da parte: '+adds.map(function(a){return a[0]+' +'+eur(a[1])}).join(', ')});
   m.cal.push({d:d,t:'Check-in di '+MESE+' fatto'});
-  s.bal={cont:num(b.cont),conto:num(b.conto),inv:num(b.inv)};m.hist.push(s);c.sum=s;c.done=true;c.m=ymk();c.obj={fondo:'',viaggio:'',auto:''};c.sch={};OPEN=false}
+  try{s.fund=fundSaved();s.ftg=num(S.fund.mesi)*pMonthly()}catch(x){}s.bal={cont:num(b.cont),conto:num(b.conto),inv:num(b.inv)};m.hist.push(s);c.sum=s;c.done=true;c.m=ymk();c.obj={fondo:'',viaggio:'',auto:''};c.sch={};OPEN=false}
+function ckPerm(){return(window.Notification&&Notification.permission)||'unsupported'}
+function ckDay(){var d=new Date();return d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear()}
+function ckNotify(){try{if(!win()||SM().chk.done)return;var k=ckDay();
+  if(localStorage.getItem('tt.d.ckpop')!==k&&window.ttConfirm&&S.prof&&S.prof.done&&S.prof.priv&&S.tourDone&&!document.documentElement.classList.contains('tt-on')){localStorage.setItem('tt.d.ckpop',k);window.ttConfirm('<b>⏰ È ora del check-in di fine mese.</b> Ci vogliono 2 minuti: stipendio, spese e saldi.','Fai il check-in',function(){goAnchor('h-ck')},'Più tardi')}
+  if(ckPerm()==='granted'&&localStorage.getItem('tt.d.cknot')!==k){localStorage.setItem('tt.d.cknot',k);var o={body:'Ci vogliono 2 minuti: controlla stipendio, spese e saldi del mese.',tag:'tt-checkin',icon:'icon-192.png'};try{new Notification('Terzo Tempo · Check-in di '+MESE,o)}catch(e){}}}catch(e){}}
+function ckNotifBtn(){var p=ckPerm();if(p==='granted')return '<p class="sub" style="margin:8px 0 0">🔔 Promemoria attivo: ti avviso quando apri l\'app dal 25 del mese in poi. A app chiusa non posso avvisarti (serve un account, non ancora disponibile).</p>';if(p==='denied')return '<p class="sub" style="margin:8px 0 0">🔕 Notifiche bloccate: riattivale dalle impostazioni del browser.</p>';if(p==='unsupported')return '';return '<p style="margin:8px 0 0"><button type="button" class="btn ghost" data-cknot="1">🔔 Ricordamelo con una notifica</button></p><p class="sub" style="margin:4px 0 0">L\'avviso arriva quando l\'app è aperta nel browser.</p>'}
+document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-cknot]');if(!b)return;try{Notification.requestPermission().then(function(r){if(r==='granted'){try{localStorage.removeItem('tt.d.cknot')}catch(x){}ckNotify()}render()})}catch(x){render()}});
+setTimeout(ckNotify,2500);document.addEventListener('visibilitychange',function(){if(!document.hidden)ckNotify()});
 function ckCard(){var m=SM(),c=m.chk;
   if(OPEN&&!c.done){if(!c.bal)c.bal=bal();return form()}
   if(c.done&&c.sum)return '<h3>✅ Check-in di '+MESE+' fatto</h3><p class="sub">Il riepilogo di questo mese. Quelli dei mesi scorsi sono in «Cronologia dei check-in».</p>'+histBody(c.sum)+(PICK?'':'')
-  if(win())return '<h3>⏰ Check-in di fine mese · 2 minuti</h3><p style="margin:0 0 6px"><b>Controlla 5 cose:</b></p><ul class="ck-l"><li>Lo stipendio è entrato?</li><li>Le spese sono state più o meno del previsto?</li><li>Saldo dei contanti</li><li>Saldo del conto corrente</li><li>Saldo degli investimenti</li></ul><p class="sub">Così correggiamo il budget e aggiorniamo i saldi.</p><button type="button" class="btn" data-ckc="open|1">Fai il check-in</button>';
+  if(win())return '<h3>⏰ Check-in di fine mese · 2 minuti</h3><p style="margin:0 0 6px"><b>Controlla 5 cose:</b></p><ul class="ck-l"><li>Lo stipendio è entrato?</li><li>Le spese sono state più o meno del previsto?</li><li>Saldo dei contanti</li><li>Saldo del conto corrente</li><li>Saldo degli investimenti</li></ul><p class="sub">Così correggiamo il budget e aggiorniamo i saldi.</p><button type="button" class="btn" data-ckc="open|1">Fai il check-in</button>'+ckNotifBtn();
   var d=new Date(),days=25-d.getDate();return '<h3>🔒 Check-in di fine mese</h3><p class="sub" style="margin:0">Si apre dal <b>25 di '+MESE+'</b>'+(days>0?' (tra '+days+(days===1?' giorno':' giorni')+')':'')+'. Ti chiederà stipendio, spese del mese e saldi. Intanto qui sotto trovi la cronologia dei check-in già fatti.</p>'}
-function calCard(){var m=SM(),L=sched().filter(function(r){return !r.past}),ev=m.cal.slice().reverse();
+var CALFULL=false;document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-calfull]');if(!b)return;CALFULL=b.getAttribute('data-calfull')==='1';render()});
+function calFullCard(){var I=TTSA.items(S.eng.scad),by={},O=['firma','merc','d31','l31','rin','giu','dis'];I.forEach(function(i){by[i.id]=i});
+  function r(i){return '<details class="ck-d"><summary>'+i.w+' · '+i.t+'</summary><div class="ck-in">'+TTSA.body(i.id,S.eng.scad)+'</div></details>'}
+  return '<button type="button" class="btn ghost" data-calfull="0">‹ Indietro</button><h3 style="margin-top:10px">Calendario completo</h3><p class="sub">Le scadenze dell\'anno che riguardano un dilettante, in ordine di stagione.</p>'+(by.pay?r(by.pay):'')+O.filter(function(k){return by[k]}).map(function(k){return r(by[k])}).join('')+'<p class="sub" style="margin-top:8px">Sono le scadenze verificate sulle norme. Non è un elenco di tutte le scadenze fiscali: per quelle chiedi al tuo commercialista. Controlla sempre il comunicato ufficiale della tua stagione.</p>'}
+function calCard(){if(CALFULL)return calFullCard();var m=SM(),L=sched().filter(function(r){return !r.past}),ev=m.cal.slice().reverse();
   var near=L.filter(function(r){return r.need>0&&r.days<=92});
   var SS=TTSA.soon(S.eng.scad,30),h='',BR=[];
   L.filter(function(r){return r.days<=30}).forEach(function(r){BR.push([r.d,'<details class="ck-d"><summary>'+r.d.getDate()+' '+['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'][r.d.getMonth()]+' · '+esc(r.label)+'</summary><div class="ck-in"><p class="sub" style="margin:0">'+(r.days<=0?'Oggi':(r.days===1?'Domani':'Tra '+r.days+' giorni'))+' · '+(r.need>0?'metti da parte <b>'+eur(r.pm)+'</b>/mese':'già messa da parte ✓')+'</p></div></details>'])});
   var RW=SS.now.map(function(x){return [x.from,'<details class="ck-d"><summary>'+x.wl+' · '+x.t+'</summary><div class="ck-in"><p class="sub" style="margin:0 0 6px">'+x.st+'</p>'+TTSA.body(x.id,S.eng.scad)+'</div></details>']}).concat(BR).sort(function(a,b){return a[0]-b[0]}).map(function(z){return z[1]});
   if((typeof pCur==='function'&&pCur()>=7)||win())RW.unshift('<p style="margin:6px 0"><b>Check-in di fine mese</b> · '+stat()+' <button type="button" class="btn" data-anchor="h-ck">Vai →</button></p>');
-  if(RW.length)h+='<h3>⚠️ '+(RW.length>1?'Scadenze':'Scadenza')+' nei prossimi 30 giorni</h3>'+RW.join('');
+  h+='<button type="button" data-calfull="1" style="float:right;background:none;border:0;color:#1a5fd0;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer">Calendario completo ›</button>';
+  if(RW.length)h+='<h3 class="pill" style="background:#fde0de;color:#3a1410;font-size:.9rem">❗ '+(RW.length>1?'Scadenze':'Scadenza')+' nei prossimi 30 giorni</h3>'+RW.join('');
   h+='<h3'+(RW.length?' style="margin-top:14px"':'')+'>🛬 Si avvicina</h3>'
-   +'<p class="sub" style="margin:0 0 6px">Tocca una voce per leggere cosa fare.</p>'+SS.rest.map(function(i){return '<details class="ck-d"><summary>'+i.w+' · '+i.t+'</summary><div class="ck-in">'+TTSA.body(i.id,S.eng.scad)+'</div></details>'}).join('');
+   +'<p class="sub" style="margin:0 0 6px">Tocca una voce per leggere cosa fare.</p>'+SS.rest.filter(function(i){return i.ord<40}).map(function(i){return '<details class="ck-d"><summary>'+i.w+' · '+i.t+'</summary><div class="ck-in">'+TTSA.body(i.id,S.eng.scad)+'</div></details>'}).join('');
   if(L.length)h+='<h4 class="ck-h">Le tue scadenze</h4>'+L.map(function(r){return RR(esc(r.label)+' · '+dstr(r.d),eur(r.amt))+(r.need>0?'<div class="sub" style="margin:0 0 6px">Metti da parte <b>'+eur(r.pm)+'</b>/mese'+(r.days<=92?' · ❗ vicina':'')+'</div>':'<div class="sub" style="margin:0 0 6px">✓ Già messa da parte</div>')}).join('');
   h+='<h4 class="ck-h">Cronologia degli eventi</h4>'+(ev.length?ev.slice(0,12).map(function(e){return RR(esc(e.t),esc(e.d))}).join(''):'<p class="sub">Ancora niente. Fai il check-in e lo trovi qui.</p>');
   return h+'<p class="sub" style="margin-top:8px">Le date sono indicative: verifica sempre quelle ufficiali.</p>'}
-function histCard(){var m=SM(),H=m.hist.slice().reverse();
-  return '<h3>📚 Cronologia dei check-in</h3>'+(H.length?'<p class="sub">Tutti i check-in, mese per mese.</p>'+H.map(function(e,i){return '<details class="ck-d"'+(i===0?' open':'')+'><summary>'+esc(e.title)+'</summary><div class="ck-in">'+histBody(e)+'</div></details>'}).join(''):'<p class="sub" style="margin:0">Ancora nessun check-in. Quando ne fai uno, lo ritrovi qui.</p>')}
+function annCard(){try{return TTCH.screen(function(){var G=S.goals||{};return {mobile:false,hist:SM().hist,goals:G,bal:{cont:G.c0,conto:G.cc0,inv:G.i0}}})}catch(e){return ''}}
+var HSELD=0;document.addEventListener('change',function(e){if(e.target&&e.target.id==='hsel-d'){HSELD=+e.target.value;render()}});
+function histCard(){var m=SM(),H=m.hist.slice().reverse();if(HSELD>=H.length)HSELD=0;
+  return '<h3>📚 Riepiloghi</h3><h4 class="ck-h" style="margin-top:6px">Riepilogo mensile</h4>'+(H.length?'<select id="hsel-d" aria-label="Scegli il mese" style="width:100%;max-width:340px;margin:4px 0 10px;padding:9px">'+H.map(function(e,i){return '<option value="'+i+'"'+(i===HSELD?' selected':'')+'>'+esc(String(e.title).replace('Check-in di ',''))+'</option>'}).join('')+'</select><div class="ck-in">'+histBody(H[HSELD])+'</div>':'<p class="sub" style="margin:0">Ancora nessun check-in. Quando ne fai uno, lo ritrovi qui.</p>')+'<hr style="border:0;border-top:1px solid var(--line);margin:16px 0">'+annCard()}
 function render(){var a=document.getElementById('h-ck'),b=document.getElementById('h-cal'),h=document.getElementById('h-hist');if(!a||!b||!h)return;
   var ae=document.activeElement,id=ae&&ae.id,pos=ae&&ae.selectionStart;
-  a.innerHTML=ckCard();b.innerHTML=calCard();h.innerHTML=histCard();
+  a.innerHTML=ckCard();b.innerHTML=calCard();h.innerHTML=histCard();var cl=document.getElementById('h-club');if(cl){var CL=window.ttClubList?window.ttClubList():[];cl.hidden=!CL.length;cl.innerHTML=CL.length?'<h3>❗ Da verificare con il club</h3><p class="sub" style="margin:0 0 6px">'+CL.length+(CL.length===1?' cosa emersa':' cose emerse')+' dalle tue risposte. Non sono accuse: sono domande da fare.</p>'+CL.map(function(x){return '<div style="padding:6px 0;border-top:1px solid var(--line)"><b>'+esc(x[0])+'</b><div class="sub" style="margin:2px 0 0">'+x[1]+'</div></div>'}).join(''):''}
   if(id){var n=document.getElementById(id);if(n&&a.contains(n)){n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}}}}
 function upd(){if(!document.getElementById('h-ck'))return;var o=document.getElementById('ck-sp-out');if(o)o.innerHTML=spendMsg()}
 document.addEventListener('input',function(e){var t=e.target,k=t.getAttribute&&t.getAttribute('data-ck');if(!k)return;var p=k.split('|'),c=SM().chk;
@@ -3534,7 +3677,7 @@ function stat(){if(SM().chk.done)return '✅ fatto';var k=days();if(win())return
 function evs(){var L=TTSA.soon(S.eng.scad,30).now.map(function(x){return [x.t,x.wl,x.from]});sched().filter(function(r){return !r.past&&r.days<=30}).forEach(function(r){L.push([r.label,r.d.getDate()+' '+['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'][r.d.getMonth()],r.d])});return L.sort(function(x,y){return x[2]-y[2]})}
 TTSA.bind(function(){return S.sad||(S.sad={})});
 document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-sadone]');if(!b)return;var id=b.getAttribute('data-sadone');(S.sad||(S.sad={}))[id]=TTSA.stamp(id,S.eng.scad);save();try{R.home()}catch(x){render()}});
-window.ttCk={render:render,confirm:confirmCk,win:win,SM:SM,stat:stat,evs:evs};
+window.ttCk={notify:ckNotify,render:render,confirm:confirmCk,win:win,SM:SM,stat:stat,evs:evs};
 })();
 
 var PW=[25,10,15,15,10,15,10];
@@ -3563,7 +3706,7 @@ function dashPaint(p,cur){var d=document.getElementById('dash');if(!d)return;
   var soldi='<div class="k dq">Quanto hai oggi?</div><div class="v">'+eur(tot)+'</div><div class="k">('+lab+')</div>'+(T>0?'<div class="k dq" style="margin-top:10px">Obiettivo a 1 anno</div><div class="v dv2">'+eur(T)+'</div><div class="k"><b>(Obiettivo completato al '+Math.min(100,Math.round(tot/T*100))+'%)</b></div><div class="bar"><i style="width:'+Math.min(100,tot/T*100)+'%"></i></div>':'<div class="k">'+(tot>0?'Quanto vuoi avere tra 1 anno?':'Scrivi quanto hai da parte')+'</div>');
   d.innerHTML='<div class="dc"><div class="k dq">A che punto sei dei 7 PASSI?</div><div class="v">'+p+'%</div><div class="pp-seg dseg">'+(window.__segH||'')+'</div></div>'
    +'<div class="dg"><button type="button" class="dc dcb" data-dact="obi">'+soldi+'</button>'
-   +'<div class="dc dn">'+(cur>=7&&window.ttCk?'<div class="k">⚠️ '+(window.ttCk.evs().length+1>1?'Scadenze':'Scadenza')+' nei prossimi 30 giorni</div><ul class="dnl"><li><b>Check-in di fine mese</b> · '+window.ttCk.stat()+'</li>'+window.ttCk.evs().map(function(e){return '<li><b>'+e[1]+'</b> · '+String(e[0]).replace(/[<>&]/g,'')+'</li>'}).join('')+'</ul><button type="button" class="btn" data-anchor="h-cal">Vai a Si avvicina →</button>':'<div class="k">Prossimo passo</div><div class="dnm">'+(nm||'Continua')+'</div><button type="button" class="btn" data-dact="next">Vai →</button>')+'</div></div>'}
+   +'<div class="dc dn">'+(cur>=7&&window.ttCk?'<div class="k">❗ '+(window.ttCk.evs().length+1>1?'Scadenze':'Scadenza')+' nei prossimi 30 giorni</div><ul class="dnl"><li><b>Check-in di fine mese</b> · '+window.ttCk.stat()+'</li>'+window.ttCk.evs().map(function(e){return '<li><b>'+e[1]+'</b> · '+String(e[0]).replace(/[<>&]/g,'')+'</li>'}).join('')+'</ul><button type="button" class="btn" data-anchor="h-cal">Vai a Si avvicina →</button>':'<div class="k">Prossimo passo</div><div class="dnm">'+(nm||'Continua')+'</div><button type="button" class="btn" data-dact="next">Vai →</button>')+'</div></div>'}
 document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('[data-dact]');if(!a)return;if(a.getAttribute('data-dact')==='obi'){if(tabLocked('obiettivi')){lockedMsg('obiettivi');return}showTab('obiettivi');window.scrollTo(0,0)}else if(window.ttNext)window.ttNext()});
 function rkVis(){return [].slice.call(document.querySelectorAll('#p-budget input[data-bud]')).filter(function(i){return !i.closest('.lp-hide')&&!i.closest('.seq-hide')&&!i.disabled})}
 function rkPaint(){[].forEach.call(document.querySelectorAll('#p-budget input[data-bud]'),function(i){var f=String(i.value).trim()!=='';i.classList.toggle('rk',f&&!i.closest('.lp-hide'));if(f){i.classList.remove('rsk');i.classList.remove('rnx')}})}
@@ -3651,7 +3794,7 @@ buildQ();$('#comp-q').addEventListener('click',function(e){var b=e.target.closes
 })();
 [['#p-contratto','contr'],['#p-conformita','comp'],['#p-netto','sim']].forEach(function(x){var el=$(x[0]);['input','change'].forEach(function(ev){el.addEventListener(ev,function(){if(!S.used[x[1]]){S.used[x[1]]=1;save()}})})});
 buildPerc();
-var h=(location.hash||'').replace('#','');var TABS=['percorso','home','contratto','conformita','netto','budget','obiettivi','fondo','debiti','invest','calc','pens','faq'];
+var h=(location.hash||'').replace('#','');var TABS=['percorso','home','contratto','conformita','netto','offerte','budget','obiettivi','fondo','debiti','invest','calc','pens','faq'];
 if(!h&&S.booted&&TABS.indexOf(S.tab)>-1)h=S.tab;
 if(tabLocked(h))h='percorso';refreshLocks();var t0=TABS.indexOf(h)>-1?h:'percorso';showTab(t0);S.booted=1;save();
 try{var sk=(S.sb||{})[t0];if(sk&&(t0==='fondo'||t0==='obiettivi'||t0==='pens')&&window.ttSub)window.ttSub(sk)}catch(e){}window.__subRec=1;
